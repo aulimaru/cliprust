@@ -67,7 +67,7 @@ fn main() {
         Commands::Store => {
             let mut input = Vec::new();
             std::io::stdin().read_to_end(&mut input).unwrap();
-            if input.is_empty() {
+            if input.is_empty() || input == [10] {
                 std::process::exit(1);
             }
             clipboard_hist.add_entry(input, &config);
@@ -79,11 +79,7 @@ fn main() {
         Commands::Decode => {
             let mut input = Vec::new();
             std::io::stdin().read_to_end(&mut input).unwrap();
-            if input.is_empty() {
-                return;
-            }
             let input = String::from_utf8(input).unwrap();
-            // if input start with img:
             let result = clipboard_hist.get_entry(get_index(input), &config);
             std::io::stdout().write_all(&result).unwrap();
         }
@@ -116,5 +112,10 @@ fn main() {
 
 fn get_index(input: String) -> usize {
     let mut input = input.split_whitespace();
-    input.next().unwrap().parse::<usize>().unwrap()
+    let input = input.next();
+    if let Some(input) = input {
+        input.parse().unwrap()
+    } else {
+        std::process::exit(1);
+    }
 }
