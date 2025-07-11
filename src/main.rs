@@ -33,9 +33,6 @@ struct Cli {
 
     #[arg(short = 'g', long)]
     generate_thumb: Option<bool>,
-
-    #[arg(short = 's', long)]
-    max_plain_size: Option<usize>,
 }
 
 #[derive(Subcommand, Debug)]
