@@ -74,3 +74,48 @@ For example, to make cliprust show thumbnails by default, set:
 ```toml
 generate_thumb = true
 ```
+## Useful Tips
+
+### Preventing `wofi` from Sorting Entries
+
+By default, `wofi` may sort entries either alphabetically or by its cache. If you prefer to display entries in the order they are produced (e.g., by `cliprust list`), you can disable caching by setting the cache file to `/dev/null`. This ensures `wofi` does not use its default cache file (located at `$XDG_CACHE_HOME/wofi-dmenu` or `~/.cache/wofi-dmenu` when using dmenu mode).
+
+**Example:**
+```sh
+cliprust list | wofi -d -k /dev/null | cliprust decode | wl-copy
+```
+
+### Preventing Clipboard Overwrite on Quit
+
+If you quit `wofi` without selecting an entry, the result is empty and will overwrite your clipboard. To avoid unintentionally clearing your clipboard, wrap your pipeline with a guard clause:
+
+**Example:**
+```sh
+cliprust list | wofi -d | { read -r output && cliprust decode <<< "$output" | wl-copy; }
+```
+This way, the clipboard is only updated if a selection is made.
+
+### Excluding Sensitive Data (e.g., KeePassXC) from Clipboard History
+
+To avoid recording sensitive contents, such as those from password managers like KeePassXC, you can filter clipboard entries based on their MIME types. For instance, KeePassXC marks its clipboard contents with the MIME type `x-kde-passwordManagerHint`. The following script stores clipboard contents only if that hint is absent:
+
+**Example Script:**
+```sh
+#!/bin/bash
+
+tmpfile=$(mktemp /dev/shm/cliprust.XXXXXX)
+chmod 600 "$tmpfile"
+trap 'shred -u "$tmpfile" 2>/dev/null' EXIT
+cat >"$tmpfile"
+if ! wl-paste --list-types | rg -q "x-kde-passwordManagerHint"; then
+    cliprust store <"$tmpfile"
+fi
+```
+
+Save this script (e.g., as `/path/to/cliprust.sh`) and initialize it to watch clipboard changes:
+
+```sh
+wl-paste --watch /path/to/cliprust.sh
+```
+
+This ensures sensitive clipboard items are not stored in your history.
