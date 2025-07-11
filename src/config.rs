@@ -2,7 +2,7 @@ use crate::Cli;
 use dirs;
 use serde::Deserialize;
 use serde::Serialize;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use toml;
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -34,7 +34,9 @@ impl Config {
     }
     pub fn from_file(path: &PathBuf) -> Self {
         let config_str = std::fs::read_to_string(path).expect("Failed to read config");
-        toml::from_str(&config_str).expect("Failed to parse config")
+        let mut config: Config = toml::from_str(&config_str).expect("Failed to parse config");
+        config.db_dir_path = expand_tilde(&config.db_dir_path);
+        config
     }
     pub fn to_file(&self, path: &PathBuf) {
         let config_str = toml::to_string(self).expect("Failed to serialize config");
@@ -65,4 +67,19 @@ fn default_db_dir_path() -> PathBuf {
     let mut path = dirs::data_dir().expect("Failed to find data directory");
     path.push("cliprust");
     path
+}
+
+fn expand_tilde(path: &Path) -> PathBuf {
+    match path.to_str() {
+        Some(p) if p == "~" || p.starts_with("~/") => {
+            let home =
+                dirs::home_dir().expect("Could not determine home directory for tilde expansion");
+            if p == "~" {
+                home
+            } else {
+                home.join(&p[2..])
+            }
+        }
+        _ => path.to_path_buf(),
+    }
 }
