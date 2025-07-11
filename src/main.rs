@@ -42,6 +42,7 @@ struct Cli {
 enum Commands {
     Store,
     List,
+    Lnlist,
     Decode,
     Delete,
     Clear,
@@ -74,6 +75,10 @@ fn main() {
             clipboard_hist.to_file(&config.db_dir_path)
         }
         Commands::List => {
+            clipboard_hist.list_entries(&config);
+        }
+        Commands::Lnlist => {
+            println!("Index\tPreview");
             clipboard_hist.list_entries(&config);
         }
         Commands::Decode => {
