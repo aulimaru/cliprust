@@ -5,12 +5,12 @@ use std::path::PathBuf;
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct ClipboardHistory {
-    history: Vec<(usize, Preview)>,
+    history: Vec<usize>,
     bytes_map: HashMap<usize, Entry>,
     index_counter: usize,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 enum Preview {
     Text(String),
     Thumb(String, String),
@@ -19,6 +19,7 @@ enum Preview {
 #[derive(Serialize, Deserialize, Debug, Clone)]
 struct Entry {
     file: usize,
+    preview: Preview,
 }
 
 impl Entry {
@@ -30,7 +31,10 @@ impl Entry {
             std::fs::create_dir_all(parent).unwrap();
         }
         std::fs::write(path, bytes).unwrap();
-        Entry { file }
+        Entry {
+            file,
+            preview: Preview::from_bytes(bytes, index, config),
+        }
     }
 
     fn as_bytes(&self, config: &Config) -> Vec<u8> {
@@ -40,6 +44,8 @@ impl Entry {
     }
 
     fn remove_file(&self, config: &Config) {
+        let preview = &self.preview;
+        preview.remove_file(config);
         let mut path = config.db_dir_path.clone();
         path.push(self.file.to_string());
         std::fs::remove_file(path).unwrap();
@@ -101,32 +107,6 @@ impl Preview {
             std::fs::remove_file(path).unwrap();
         }
     }
-
-    fn check_duplicates(&self, bytes: &Vec<u8>, config: &Config) -> bool {
-        let type_match = match self {
-            Preview::Text(_) => {
-                if let Some(kind) = infer::get(bytes.as_slice()) {
-                    match kind.matcher_type() {
-                        infer::MatcherType::Text => true,
-                        _ => false,
-                    }
-                } else {
-                    true
-                }
-            }
-            Preview::Thumb(_, _) => {
-                if let Some(kind) = infer::get(bytes.as_slice()) {
-                    match kind.matcher_type() {
-                        infer::MatcherType::Image => true,
-                        _ => false,
-                    }
-                } else {
-                    false
-                }
-            }
-        };
-        type_match
-    }
 }
 
 impl ClipboardHistory {
@@ -144,28 +124,20 @@ impl ClipboardHistory {
         }
         let dedupe_depth = std::cmp::min(self.history.len(), config.max_dedupe_depth);
         for i in (self.history.len() - dedupe_depth..self.history.len()).rev() {
-            let (index, preview) = &self.history[i];
-            if preview.check_duplicates(&content, config) {
-                let entry = self.bytes_map.get(index).unwrap();
-                if entry.as_bytes(config) == content {
-                    let entry = entry.clone();
-                    preview.remove_file(config);
-                    self.bytes_map.remove(index);
-                    self.history.remove(i);
-                    self.history.push((
-                        self.index_counter,
-                        Preview::from_bytes(&content, self.index_counter, config),
-                    ));
-                    self.bytes_map.insert(self.index_counter, entry);
-                    self.index_counter += 1;
-                    return;
-                }
+            let index = self.history[i];
+            let entry = self.bytes_map.get(&index).unwrap();
+            if entry.as_bytes(config) == content {
+                let entry = entry.clone();
+                // preview.remove_file(config);
+                // self.bytes_map.remove(index);
+                self.history.remove(i);
+                self.history.push(index);
+                self.bytes_map.insert(self.index_counter, entry);
+                // self.index_counter += 1;
+                return;
             }
         }
-        self.history.push((
-            self.index_counter,
-            Preview::from_bytes(&content, self.index_counter, config),
-        ));
+        self.history.push(self.index_counter);
         self.bytes_map.insert(
             self.index_counter,
             Entry::from_bytes(&content, self.index_counter, config),
@@ -174,7 +146,7 @@ impl ClipboardHistory {
     }
 
     fn remove_oldest(&mut self, config: &Config) {
-        let (index, _) = self.history[0];
+        let index = self.history[0];
         self.delete_entry(index, config);
     }
 
@@ -183,8 +155,13 @@ impl ClipboardHistory {
     }
 
     pub fn list_entries(&self, config: &Config) {
-        for (index, preview) in self.history.iter().rev() {
-            let preview = preview.to_preview(*index, config);
+        for index in self.history.iter().rev() {
+            let preview = self
+                .bytes_map
+                .get(index)
+                .unwrap()
+                .preview
+                .to_preview(*index, config);
             println!("{}", preview);
         }
     }
@@ -192,20 +169,24 @@ impl ClipboardHistory {
     pub fn delete_entry(&mut self, index: usize, config: &Config) {
         let mut i = 0;
         while i < self.history.len() {
-            if self.history[i].0 == index {
+            if self.history[i] == index {
                 break;
             }
             i += 1;
         }
-        let (_, preview) = self.history.remove(i);
-        preview.remove_file(config);
+        let index = self.history.remove(i);
         let entry = self.bytes_map.get(&index).unwrap();
         entry.remove_file(config);
         self.bytes_map.remove(&index);
     }
 
     pub fn last(&self, config: &Config) -> String {
-        let (index, preview) = self.history.last().expect("No entries in history");
+        let index = self.history.last().expect("No entries in history");
+        let preview = &self
+            .bytes_map
+            .get(index)
+            .expect("No entry for index")
+            .preview;
         preview.to_preview(*index, config)
     }
 
@@ -213,13 +194,18 @@ impl ClipboardHistory {
         if self.history.len() < 2 {
             panic!("Less than 2 entries in history");
         }
-        let (index, preview) = &self.history[self.history.len() - 2];
+        let index = &self.history[self.history.len() - 2];
+        let preview = &self
+            .bytes_map
+            .get(index)
+            .expect("No entry for index")
+            .preview;
         preview.to_preview(*index, config)
     }
 
     pub fn clear(&mut self, config: &Config) {
         while !self.history.is_empty() {
-            let (index, _) = self.history[0];
+            let index = self.history[0];
             self.delete_entry(index, config);
         }
     }
