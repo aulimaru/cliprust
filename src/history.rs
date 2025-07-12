@@ -1,7 +1,7 @@
 use crate::config::Config;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::Path;
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct ClipboardHistory {
@@ -24,30 +24,26 @@ struct Entry {
 
 impl Entry {
     fn from_bytes(bytes: &[u8], index: usize, config: &Config) -> Self {
-        let mut path = config.db_dir_path.clone();
-        let file = index;
-        path.push(file.to_string());
+        let path = config.db_dir_path.join(index.to_string());
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent).unwrap();
         }
         std::fs::write(path, bytes).unwrap();
         Entry {
-            file,
+            file: index,
             preview: Preview::from_bytes(bytes, index, config),
         }
     }
 
     fn as_bytes(&self, config: &Config) -> Vec<u8> {
-        let mut path = config.db_dir_path.clone();
-        path.push(self.file.to_string());
+        let path = config.db_dir_path.join(self.file.to_string());
         std::fs::read(path).unwrap()
     }
 
     fn remove_file(&self, config: &Config) {
+        let path = config.db_dir_path.join(self.file.to_string());
         let preview = &self.preview;
         preview.remove_file(config);
-        let mut path = config.db_dir_path.clone();
-        path.push(self.file.to_string());
         std::fs::remove_file(path).unwrap();
     }
 }
@@ -60,9 +56,7 @@ impl Preview {
                 if !config.generate_thumb {
                     text_with_limit(preview, config.preview_width)
                 } else {
-                    let mut path = config.db_dir_path.clone();
-                    path.push("thumbs");
-                    path.push(file);
+                    let path = config.db_dir_path.join("thumbs").join(file);
                     let preview = format!(
                         ":img:{}:text:{}",
                         path.to_str().unwrap(),
@@ -80,10 +74,8 @@ impl Preview {
         if let Some(kind) = infer::get(bytes) {
             match kind.matcher_type() {
                 infer::MatcherType::Image => {
-                    let mut path = config.db_dir_path.clone();
                     let file = format!("{}.{}", index, kind.extension());
-                    path.push("thumbs");
-                    path.push(&file);
+                    let path = config.db_dir_path.join("thumbs").join(&file);
                     if let Some(parent) = path.parent() {
                         std::fs::create_dir_all(parent).unwrap();
                     }
@@ -101,9 +93,7 @@ impl Preview {
 
     fn remove_file(&self, config: &Config) {
         if let Preview::Thumb(_, file) = self {
-            let mut path = config.db_dir_path.clone();
-            path.push("thumbs");
-            path.push(file);
+            let path = config.db_dir_path.join("thumbs").join(file);
             std::fs::remove_file(path).unwrap();
         }
     }
@@ -119,7 +109,7 @@ impl ClipboardHistory {
     }
 
     pub fn add_entry(&mut self, content: Vec<u8>, config: &Config) {
-        while self.history.len() >= config.max_items {
+        if self.history.len() >= config.max_items {
             self.remove_oldest(config);
         }
         let dedupe_depth = std::cmp::min(self.history.len(), config.max_dedupe_depth);
@@ -194,15 +184,17 @@ impl ClipboardHistory {
     }
 
     pub fn clear(&mut self, config: &Config) {
-        while !self.history.is_empty() {
-            let index = self.history[0];
-            self.delete_entry(index, config);
+        let indices: Vec<usize> = std::mem::take(&mut self.history);
+
+        for index in indices {
+            if let Some(entry) = self.bytes_map.remove(&index) {
+                entry.remove_file(config);
+            }
         }
     }
 
-    pub fn to_file(&self, path: &PathBuf) {
-        let mut path = path.clone();
-        path.push("db");
+    pub fn to_file(&self, path: &Path) {
+        let path = path.join("db");
         let encoded: Vec<u8> = bincode::serialize(&self).unwrap();
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent).unwrap();
@@ -210,9 +202,8 @@ impl ClipboardHistory {
         std::fs::write(path, encoded).unwrap();
     }
 
-    pub fn from_file(path: &PathBuf) -> Self {
-        let mut path = path.clone();
-        path.push("db");
+    pub fn from_file(path: &Path) -> Self {
+        let path = path.join("db");
         if !path.exists() {
             return ClipboardHistory::new();
         }
