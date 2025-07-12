@@ -83,7 +83,11 @@ fn main() {
             std::io::stdin().read_to_end(&mut input).unwrap();
             let input = String::from_utf8(input).unwrap();
             let result = clipboard_hist.get_entry(get_index(input), &config);
-            std::io::stdout().write_all(&result).unwrap();
+            if let Ok(bytes) = result {
+                std::io::stdout().write_all(&bytes).unwrap();
+            } else {
+                std::process::exit(1);
+            }
         }
         Commands::Delete => {
             let mut input = Vec::new();

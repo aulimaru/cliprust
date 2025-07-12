@@ -23,7 +23,7 @@ struct Entry {
 }
 
 impl Entry {
-    fn from_bytes(bytes: &Vec<u8>, index: usize, config: &Config) -> Self {
+    fn from_bytes(bytes: &[u8], index: usize, config: &Config) -> Self {
         let mut path = config.db_dir_path.clone();
         let file = index;
         path.push(file.to_string());
@@ -75,21 +75,21 @@ impl Preview {
         index.to_string() + "\t" + &preview
     }
 
-    fn from_bytes(bytes: &Vec<u8>, index: usize, config: &Config) -> Self {
-        let preview = bytes_to_preview(&bytes, config);
-        if let Some(kind) = infer::get(bytes.as_slice()) {
+    fn from_bytes(bytes: &[u8], index: usize, config: &Config) -> Self {
+        let preview = bytes_to_preview(bytes, config);
+        if let Some(kind) = infer::get(bytes) {
             match kind.matcher_type() {
                 infer::MatcherType::Image => {
                     let mut path = config.db_dir_path.clone();
-                    let file = index.to_string() + "." + kind.extension();
+                    let file = format!("{}.{}", index, kind.extension());
                     path.push("thumbs");
-                    path.push(file.clone());
+                    path.push(&file);
                     if let Some(parent) = path.parent() {
                         std::fs::create_dir_all(parent).unwrap();
                     }
-                    let img = image::load_from_memory(&bytes).unwrap();
+                    let img = image::load_from_memory(bytes).unwrap();
                     let img = img.resize(256, 256, image::imageops::FilterType::Lanczos3);
-                    img.save(path).unwrap();
+                    img.save(&path).unwrap();
                     Preview::Thumb(preview, file)
                 }
                 _ => Preview::Text(preview),
@@ -127,13 +127,8 @@ impl ClipboardHistory {
             let index = self.history[i];
             let entry = self.bytes_map.get(&index).unwrap();
             if entry.as_bytes(config) == content {
-                let entry = entry.clone();
-                // preview.remove_file(config);
-                // self.bytes_map.remove(index);
                 self.history.remove(i);
                 self.history.push(index);
-                self.bytes_map.insert(self.index_counter, entry);
-                // self.index_counter += 1;
                 return;
             }
         }
@@ -150,34 +145,29 @@ impl ClipboardHistory {
         self.delete_entry(index, config);
     }
 
-    pub fn get_entry(&self, index: usize, config: &Config) -> Vec<u8> {
-        self.bytes_map.get(&index).unwrap().as_bytes(config)
+    pub fn get_entry(&self, index: usize, config: &Config) -> Result<Vec<u8>, ()> {
+        self.bytes_map
+            .get(&index)
+            .map(|entry| entry.as_bytes(config))
+            .ok_or(())
     }
 
     pub fn list_entries(&self, config: &Config) {
         for index in self.history.iter().rev() {
-            let preview = self
-                .bytes_map
-                .get(index)
-                .unwrap()
-                .preview
-                .to_preview(*index, config);
-            println!("{}", preview);
+            if let Some(entry) = self.bytes_map.get(index) {
+                println!("{}", entry.preview.to_preview(*index, config));
+            }
         }
     }
 
     pub fn delete_entry(&mut self, index: usize, config: &Config) {
-        let mut i = 0;
-        while i < self.history.len() {
-            if self.history[i] == index {
-                break;
+        if let Some(i) = self.history.iter().position(|&x| x == index) {
+            let index = self.history.remove(i);
+            if let Some(entry) = self.bytes_map.get(&index) {
+                entry.remove_file(config);
             }
-            i += 1;
+            self.bytes_map.remove(&index);
         }
-        let index = self.history.remove(i);
-        let entry = self.bytes_map.get(&index).unwrap();
-        entry.remove_file(config);
-        self.bytes_map.remove(&index);
     }
 
     pub fn last(&self, config: &Config) -> String {
@@ -231,23 +221,12 @@ impl ClipboardHistory {
     }
 }
 
-fn bytes_to_preview(bytes: &Vec<u8>, config: &Config) -> String {
-    let info = infer::get(bytes.as_slice());
-    if let Some(kind) = info {
-        match kind.matcher_type() {
-            infer::MatcherType::Image => {
-                format!("{} {}", kind.mime_type(), size_to_string(bytes.len()))
-            }
-            _ => format!("{} {}", kind.mime_type(), size_to_string(bytes.len())),
-        }
+fn bytes_to_preview(bytes: &[u8], config: &Config) -> String {
+    if let Some(kind) = infer::get(bytes) {
+        format!("{} {}", kind.mime_type(), size_to_string(bytes.len()))
     } else {
-        String::from_utf8_lossy(&bytes)
-            .to_string()
-            .chars()
-            .take(500)
-            .collect::<String>()
-            .trim()
-            .replace("\n", "↵ ")
+        let preview: String = String::from_utf8_lossy(bytes).chars().take(500).collect();
+        preview.trim().replace('\n', "↵ ")
     }
 }
 
@@ -265,7 +244,7 @@ fn size_to_string(size: usize) -> String {
 
 fn text_with_limit(text: &str, limit: usize) -> String {
     if text.chars().count() <= limit {
-        return text.to_string();
+        return text.into();
     }
     text.chars().take(limit).collect::<String>() + "..."
 }
