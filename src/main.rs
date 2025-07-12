@@ -33,13 +33,15 @@ struct Cli {
 
     #[arg(short = 'g', long)]
     generate_thumb: Option<bool>,
+
+    #[arg(short = 't', long)]
+    header: Option<String>,
 }
 
 #[derive(Subcommand, Debug)]
 enum Commands {
     Store,
     List,
-    Lnlist,
     Decode,
     Delete,
     Clear,
@@ -72,10 +74,9 @@ fn main() {
             clipboard_hist.to_file(&config.db_dir_path)
         }
         Commands::List => {
-            clipboard_hist.list_entries(&config);
-        }
-        Commands::Lnlist => {
-            println!("Index\tPreview");
+            if let Some(header) = &args.header {
+                println!("{}", header);
+            }
             clipboard_hist.list_entries(&config);
         }
         Commands::Decode => {
@@ -102,10 +103,16 @@ fn main() {
             clipboard_hist.to_file(&config.db_dir_path)
         }
         Commands::Last => {
+            if let Some(header) = &args.header {
+                println!("{}", header);
+            }
             let result = clipboard_hist.last(&config);
             println!("{}", result);
         }
         Commands::SecondLast => {
+            if let Some(header) = &args.header {
+                println!("{}", header);
+            }
             let result = clipboard_hist.second_last(&config);
             println!("{}", result);
         }
