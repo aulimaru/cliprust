@@ -70,7 +70,7 @@ fn main() {
             if input.is_empty() || input == [10] {
                 std::process::exit(1);
             }
-            clipboard_hist.add_entry(input, &config);
+            clipboard_hist.add_entry(&input, &config);
             clipboard_hist.to_file(&config.db_dir_path)
         }
         Commands::List => {

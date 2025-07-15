@@ -1,11 +1,13 @@
 use crate::config::Config;
+use blake3::Hash;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::Path;
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct ClipboardHistory {
-    history: Vec<usize>,
+    history: Vec<Hash>,
+    index_map: HashMap<Hash, usize>,
     bytes_map: HashMap<usize, Entry>,
     index_counter: usize,
 }
@@ -104,25 +106,28 @@ impl ClipboardHistory {
         ClipboardHistory {
             history: Vec::new(),
             bytes_map: HashMap::new(),
+            index_map: HashMap::new(),
             index_counter: 1,
         }
     }
 
-    pub fn add_entry(&mut self, content: Vec<u8>, config: &Config) {
+    pub fn add_entry(&mut self, content: &[u8], config: &Config) {
         if self.history.len() >= config.max_items {
             self.remove_oldest(config);
         }
-        let dedupe_depth = std::cmp::min(self.history.len(), config.max_dedupe_depth);
-        for i in (self.history.len() - dedupe_depth..self.history.len()).rev() {
-            let index = self.history[i];
-            let entry = self.bytes_map.get(&index).unwrap();
-            if entry.as_bytes(config) == content {
+        let hash = bytes_to_hash(&content);
+        if let Some(_index) = self.dedupe_by_hash(hash) {
+            if let Some(i) = self.dedupe(&content, config) {
                 self.history.remove(i);
-                self.history.push(index);
+                self.history.push(hash);
                 return;
             }
+            // hash collision (This happens?)
+            self.index_map.remove(&hash);
+            self.history.retain(|&h| h != hash);
         }
-        self.history.push(self.index_counter);
+        self.history.push(hash);
+        self.index_map.insert(hash, self.index_counter);
         self.bytes_map.insert(
             self.index_counter,
             Entry::from_bytes(&content, self.index_counter, config),
@@ -130,9 +135,28 @@ impl ClipboardHistory {
         self.index_counter += 1;
     }
 
+    pub fn dedupe(&mut self, content: &[u8], config: &Config) -> Option<usize> {
+        let dedupe_depth = std::cmp::min(self.history.len(), config.max_dedupe_depth);
+        for i in (self.history.len() - dedupe_depth..self.history.len()).rev() {
+            let index = self.index_map.get(&self.history[i]).unwrap();
+            let entry = self.bytes_map.get(&index).unwrap();
+            if entry.as_bytes(config) == content {
+                return Some(i);
+            }
+        }
+        None
+    }
+
+    pub fn dedupe_by_hash(&mut self, hash: Hash) -> Option<usize> {
+        if let Some(&index) = self.index_map.get(&hash) {
+            return Some(index);
+        }
+        None
+    }
+
     fn remove_oldest(&mut self, config: &Config) {
-        let index = self.history[0];
-        self.delete_entry(index, config);
+        let index = self.index_map.get(&self.history[0]).unwrap();
+        self.delete_entry(*index, config);
     }
 
     pub fn get_entry(&self, index: usize, config: &Config) -> Result<Vec<u8>, ()> {
@@ -143,7 +167,8 @@ impl ClipboardHistory {
     }
 
     pub fn list_entries(&self, config: &Config) {
-        for index in self.history.iter().rev() {
+        for hash in self.history.iter().rev() {
+            let index = self.index_map.get(hash).expect("No index for hash");
             if let Some(entry) = self.bytes_map.get(index) {
                 println!("{}", entry.preview.to_preview(*index, config));
             }
@@ -151,17 +176,27 @@ impl ClipboardHistory {
     }
 
     pub fn delete_entry(&mut self, index: usize, config: &Config) {
-        if let Some(i) = self.history.iter().position(|&x| x == index) {
-            let index = self.history.remove(i);
-            if let Some(entry) = self.bytes_map.get(&index) {
+        if let Some(i) = self
+            .history
+            .iter()
+            .position(|x| *self.index_map.get(x).unwrap() == index)
+        {
+            let index = self
+                .index_map
+                .get(&self.history.remove(i))
+                .expect("No index for hash");
+            if let Some(entry) = self.bytes_map.get(index) {
                 entry.remove_file(config);
             }
-            self.bytes_map.remove(&index);
+            self.bytes_map.remove(index);
         }
     }
 
     pub fn last(&self, config: &Config) -> String {
-        let index = self.history.last().expect("No entries in history");
+        let index = self
+            .index_map
+            .get(self.history.last().expect("No entries in history"))
+            .expect("No index for last hash");
         let preview = &self
             .bytes_map
             .get(index)
@@ -174,7 +209,10 @@ impl ClipboardHistory {
         if self.history.len() < 2 {
             panic!("Less than 2 entries in history");
         }
-        let index = &self.history[self.history.len() - 2];
+        let index = self
+            .index_map
+            .get(&self.history[self.history.len() - 2])
+            .expect("No index for second last hash");
         let preview = &self
             .bytes_map
             .get(index)
@@ -184,9 +222,9 @@ impl ClipboardHistory {
     }
 
     pub fn clear(&mut self, config: &Config) {
-        let indices: Vec<usize> = std::mem::take(&mut self.history);
+        let hashes: Vec<Hash> = std::mem::take(&mut self.history);
 
-        for index in indices {
+        for index in hashes.iter().filter_map(|h| self.index_map.remove(h)) {
             if let Some(entry) = self.bytes_map.remove(&index) {
                 entry.remove_file(config);
             }
@@ -238,4 +276,8 @@ fn text_with_limit(text: &str, limit: usize) -> String {
         return text.into();
     }
     text.chars().take(limit).collect::<String>() + "..."
+}
+
+fn bytes_to_hash(bytes: &[u8]) -> blake3::Hash {
+    blake3::hash(bytes)
 }

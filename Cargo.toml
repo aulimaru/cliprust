@@ -12,3 +12,4 @@ infer = "0.16.0"
 regex = "1.11.1"
 serde = { version = "1.x", features = ["derive"] }
 toml = { version = "0.8.x" }
+blake3 = { version = "1.8.2", features = ["serde"] }
