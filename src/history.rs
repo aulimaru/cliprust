@@ -65,7 +65,7 @@ impl Preview {
                 ThumbMode::Rofi => {
                     let path = config.db_dir_path.join("thumbs").join(file);
                     format!(
-                        "{}\0icon\x1fthumbnail://{}",
+                        "{}\0icon\x1f{}",
                         text_with_limit(preview, config.preview_width),
                         path.to_str().unwrap()
                     )
