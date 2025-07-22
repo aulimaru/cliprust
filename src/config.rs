@@ -1,9 +1,17 @@
 use crate::Cli;
+use clap::ValueEnum;
 use dirs;
 use serde::Deserialize;
 use serde::Serialize;
 use std::path::{Path, PathBuf};
 use toml;
+
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, ValueEnum, Debug, Deserialize, Serialize)]
+pub enum ThumbMode {
+    Wofi,
+    Rofi,
+    None,
+}
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct Config {
@@ -11,7 +19,7 @@ pub struct Config {
     pub max_dedupe_depth: usize,
     pub max_items: usize,
     pub preview_width: usize,
-    pub generate_thumb: bool,
+    pub generate_thumb: ThumbMode,
 }
 
 impl Config {
@@ -28,8 +36,8 @@ impl Config {
         if let Some(preview_width) = cli.max_preview_width {
             self.preview_width = preview_width;
         }
-        if let Some(generate_thumb) = cli.generate_thumb {
-            self.generate_thumb = generate_thumb;
+        if let Some(generate_thumb) = &cli.generate_thumb {
+            self.generate_thumb = generate_thumb.clone();
         }
     }
     pub fn from_file(path: &PathBuf) -> Self {
@@ -59,7 +67,7 @@ pub fn default_config() -> Config {
         max_dedupe_depth: 100,
         max_items: 750,
         preview_width: 100,
-        generate_thumb: false,
+        generate_thumb: ThumbMode::None,
     }
 }
 

@@ -1,4 +1,5 @@
 use crate::config::Config;
+use crate::config::ThumbMode;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::Path;
@@ -52,19 +53,25 @@ impl Preview {
     fn to_preview(&self, index: usize, config: &Config) -> String {
         let preview = match self {
             Preview::Text(preview) => text_with_limit(preview, config.preview_width),
-            Preview::Thumb(preview, file) => {
-                if !config.generate_thumb {
-                    text_with_limit(preview, config.preview_width)
-                } else {
+            Preview::Thumb(preview, file) => match config.generate_thumb {
+                ThumbMode::Wofi => {
                     let path = config.db_dir_path.join("thumbs").join(file);
-                    let preview = format!(
+                    format!(
                         ":img:{}:text:{}",
                         path.to_str().unwrap(),
                         text_with_limit(preview, config.preview_width)
-                    );
-                    preview
+                    )
                 }
-            }
+                ThumbMode::Rofi => {
+                    let path = config.db_dir_path.join("thumbs").join(file);
+                    format!(
+                        "{}\0icon\x1fthumbnail://{}",
+                        text_with_limit(preview, config.preview_width),
+                        path.to_str().unwrap()
+                    )
+                }
+                ThumbMode::None => text_with_limit(preview, config.preview_width),
+            },
         };
         index.to_string() + "\t" + &preview
     }

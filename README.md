@@ -43,12 +43,18 @@ cliprust list | wofi -d | cliprust decode | wl-copy
 
 #### Show Thumbnails
 
-cliprust stores thumbnails interactively every time you copy an image. To display them when listing, use `cliprust -g true list`.
+cliprust stores thumbnails interactively every time you copy an image. To display them, use `-g`
 
 An example usage with `wofi` to show thumbnails:
 
 ```sh
-cliprust -g true list | wofi -d -I | cliprust decode | wl-copy
+cliprust -g wofi list | wofi -d -I | cliprust decode | wl-copy
+```
+
+An example usage with `rofi` to show thumbnails:
+
+``` sh
+cliprust -g rofi list | rofi -dmenu -show-icons
 ```
 
 ### Delete Old Entry
@@ -69,10 +75,10 @@ A default config will be generated when the code is first executed at `$XDG_CONF
 
 Use the config file to set the directory where the history files are stored and to define default values, so you don't need to pass arguments each time.
 
-For example, to make cliprust show thumbnails by default, set:
+For example, to make cliprust show thumbnails for `wofi` by default, set:
 
 ```toml
-generate_thumb = true
+generate_thumb = "Wofi"
 ```
 ## Useful Tips
 

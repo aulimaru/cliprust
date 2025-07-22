@@ -2,6 +2,7 @@ mod config;
 mod history;
 use clap::Parser;
 use clap::Subcommand;
+use config::ThumbMode;
 use std::io::Read;
 use std::io::Write;
 use std::path::PathBuf;
@@ -32,7 +33,7 @@ struct Cli {
     max_preview_width: Option<usize>,
 
     #[arg(short = 'g', long)]
-    generate_thumb: Option<bool>,
+    generate_thumb: Option<ThumbMode>,
 
     #[arg(short = 't', long)]
     header: Option<String>,
